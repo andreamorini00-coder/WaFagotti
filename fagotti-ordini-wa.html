@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Fagotti — Ordina la tua Torta</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:Georgia,serif;background:#1a1207;min-height:100vh}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#e0d8cc;border-radius:2px}
+input,button,textarea{font-family:sans-serif}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ─── CONFIGURAZIONE ────────────────────────────────────────────────────────
+const WA_NUMBER   = "390612345678"; // ← sostituisci col numero reale Fagotti
+const ORO         = "#c9a84c";
+const NERO        = "#1a1207";
+const ORO_L       = "#fdf5e0";
+
+const LISTINO = {
+  "Tiramisù classico":30,"Millefoglie fragole":27,"Sacher":27,"Cheesecake":30,
+  "Red Velvet":30,"Charlotte limone":35,"Tre cioccolati":30,"Profitterole":27,
+  "Montblanc":35,"Meringata frutti bosco":30,"Pavlova":30,"Saint Honorè":27,
+  "Lemon tart":30,"Black Forest":27,"Cream tart":30,"Afrodite":30,
+  "Diplomatica":27,"Dolce castagne":35,"Kinder":27,"Mandarinoir":35,
+  "Marika":35,"Millefoglie classico":27,"Mimosa":27,"Moretta":27,
+  "Ohana":30,"Pastiera":30,"Serendipity":35,"Settembrina":35,"Sveva":35,
+  "Tiramisù fragole":30,"Ugly cake":30,"Zuccotto":27,
+};
+const FARCITURE = [
+  "Crema pasticciera","Crema chantilly","Crema al cioccolato",
+  "Fragole fresche","Frutti di bosco","Pistacchio","Nocciola","Nessuna particolare"
+];
+const DECORAZIONI = [
+  "Classica con panna","Frutta fresca","Cioccolato e riccioli",
+  "Fiori di zucchero","Minimal elegante","Pasta di zucchero","Nessuna particolare"
+];
+const ORARI = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30",
+               "12:00","12:30","13:00","14:00","15:00","16:00","17:00","18:00","19:00"];
+const GIORNI_IT = ["Dom","Lun","Mar","Mer","Gio","Ven","Sab"];
+const MESI_IT   = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+
+// ─── UTILS ────────────────────────────────────────────────────────────────
+function getGiorni(){
+  const g=[],oggi=new Date();let d=new Date(oggi);d.setDate(d.getDate()+1);
+  while(g.length<8){if(d.getDay()!==1)g.push(new Date(d));d.setDate(d.getDate()+1);}
+  return g;
+}
+function fmtG(d){return `${GIORNI_IT[d.getDay()]} ${d.getDate()} ${MESI_IT[d.getMonth()]}`;}
+function kgPerPersone(n){return n*0.15;}
+function prezzoStimato(torta,persone,consegna){
+  const pk=LISTINO[torta]||30;
+  const base=pk*kgPerPersone(persone)+(consegna?10:0);
+  return{low:Math.round(base*0.85),high:Math.round(base*1.15),base:Math.round(base),pk};
+}
+
+// ─── UI PRIMITIVES ────────────────────────────────────────────────────────
+function BotMsg({text}){
+  return(
+    <div style={{display:"flex",alignItems:"flex-end",gap:8,marginBottom:8,animation:"fadeUp .3s ease"}}>
+      <div style={{width:32,height:32,borderRadius:"50%",background:NERO,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🎂</div>
+      <div style={{background:"#fff",borderRadius:"18px 18px 18px 4px",padding:"10px 14px",maxWidth:290,boxShadow:"0 1px 4px rgba(0,0,0,.08)",fontSize:14,lineHeight:1.6,color:NERO,whiteSpace:"pre-line"}}>{text}</div>
+    </div>
+  );
+}
+function UserMsg({text}){
+  return(
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+      <div style={{background:ORO,borderRadius:"18px 18px 4px 18px",padding:"10px 14px",maxWidth:260,fontSize:14,color:"#fff",lineHeight:1.5,fontWeight:500}}>{text}</div>
+    </div>
+  );
+}
+function Chip({label,sub,onClick}){
+  const[h,setH]=useState(false);
+  return(
+    <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{padding:"8px 13px",borderRadius:20,border:`2px solid ${h?ORO:"#e0d8cc"}`,
+        background:h?ORO_L:"#fff",color:h?NERO:"#555",fontSize:13,cursor:"pointer",
+        fontWeight:h?700:400,transition:"all .15s",marginBottom:4,
+        display:"flex",flexDirection:"column",alignItems:"flex-start",gap:1}}>
+      <span>{label}</span>
+      {sub&&<span style={{fontSize:11,color:h?"#8a6d2a":"#aaa",fontWeight:400}}>{sub}</span>}
+    </button>
+  );
+}
+function BigBtn({emoji,label,sub,onClick}){
+  const[h,setH]=useState(false);
+  return(
+    <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+      style={{width:"100%",padding:"13px 16px",borderRadius:12,border:`2px solid ${h?ORO:"#e0d8cc"}`,
+        background:h?ORO_L:"#fff",color:NERO,fontSize:14,cursor:"pointer",
+        display:"flex",alignItems:"center",gap:10,textAlign:"left",marginBottom:8,transition:"all .15s"}}>
+      <span style={{fontSize:22}}>{emoji}</span>
+      <div><div style={{fontWeight:700}}>{label}</div>{sub&&<div style={{fontSize:12,color:"#888",marginTop:2}}>{sub}</div>}</div>
+    </button>
+  );
+}
+function SuggestInput({suggerimenti,placeholder,onConfirm}){
+  const[val,setVal]=useState("");
+  const go=v=>{if(v.trim())onConfirm(v.trim());};
+  return(
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <input value={val} onChange={e=>setVal(e.target.value)} placeholder={placeholder}
+          onKeyDown={e=>{if(e.key==="Enter")go(val);}}
+          style={{flex:1,padding:"11px 14px",borderRadius:12,border:"1px solid #e0d8cc",fontSize:14,outline:"none"}}/>
+        <button onClick={()=>go(val)}
+          style={{padding:"11px 18px",borderRadius:12,background:ORO,color:"#fff",border:"none",cursor:"pointer",fontWeight:700,fontSize:16}}>→</button>
+      </div>
+      <div style={{fontSize:11,color:"#aaa",marginBottom:6}}>Oppure scegli:</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        {suggerimenti.map(s=>(
+          <button key={s} onClick={()=>go(s)}
+            style={{padding:"6px 12px",borderRadius:16,border:"1px solid #e0d8cc",background:"#f9f7f4",color:"#555",fontSize:12,cursor:"pointer"}}>
+            {s}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+function PrezzoBox({torta,persone,consegna}){
+  if(!torta||!persone)return null;
+  const{low,high,pk}=prezzoStimato(torta,persone,consegna);
+  return(
+    <div style={{background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:10,padding:"10px 14px",margin:"8px 0"}}>
+      <div style={{fontSize:11,color:"#0369a1",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>Stima di spesa</div>
+      <div style={{fontSize:22,fontWeight:700,color:NERO}}>circa €{low} – €{high}</div>
+      <div style={{fontSize:11,color:"#888",marginTop:2}}>~{kgPerPersone(persone).toFixed(2)} kg · €{pk}/kg{consegna?" + €10 consegna":""}</div>
+      <div style={{fontSize:11,color:"#0369a1",marginTop:4}}>💡 Il prezzo definitivo verrà concordato con la pasticceria</div>
+    </div>
+  );
+}
+function WaBtn({onClick}){
+  return(
+    <button onClick={onClick}
+      style={{width:"100%",marginTop:8,padding:"11px",borderRadius:12,background:"#f0fdf4",
+        border:"1px solid #86efac",color:"#15803d",fontSize:13,fontWeight:600,cursor:"pointer",
+        display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#15803d"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+      Parla con la pasticceria
+    </button>
+  );
+}
+
+// ─── STRIPE CHECKOUT ──────────────────────────────────────────────────────
+function StripeCheckout({importo,ordine,stripeKey,onSuccess,onCancel}){
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState("");
+  const[stripeObj,setStripeObj]=useState(null);
+  const[elements,setElements]=useState(null);
+  const[ready,setReady]=useState(false);
+  const mountRef=useRef();
+
+  useEffect(()=>{
+    if(!stripeKey||!stripeKey.startsWith("pk_"))return;
+    if(window.Stripe){initStripe();return;}
+    const s=document.createElement("script");
+    s.src="https://js.stripe.com/v3/";
+    s.onload=initStripe;
+    document.head.appendChild(s);
+  },[stripeKey]);
+
+  function initStripe(){
+    if(!window.Stripe){setError("Stripe non caricato.");return;}
+    try{
+      const sk=window.Stripe(stripeKey);
+      const el=sk.elements({mode:"payment",amount:importo*100,currency:"eur",
+        appearance:{theme:"stripe",variables:{colorPrimary:ORO,borderRadius:"10px"}}});
+      const pe=el.create("payment");
+      pe.mount(mountRef.current);
+      pe.on("ready",()=>setReady(true));
+      setStripeObj(sk);setElements(el);
+    }catch(e){setError("Chiave Stripe non valida: "+e.message);}
+  }
+
+  async function handlePay(){
+    if(!stripeObj||!elements)return;
+    setLoading(true);setError("");
+    const{error:subErr}=await elements.submit();
+    if(subErr){setError(subErr.message);setLoading(false);return;}
+    const{error:payErr}=await stripeObj.confirmPayment({
+      elements,
+      confirmParams:{return_url:window.location.href,
+        payment_method_data:{billing_details:{name:ordine.nome||"Cliente Fagotti"}}}
+    });
+    if(payErr){setError(payErr.message);setLoading(false);}
+    else{onSuccess();}
+  }
+
+  if(!stripeKey||!stripeKey.startsWith("pk_"))return(
+    <div style={{padding:"20px",textAlign:"center",color:"#888",fontSize:13}}>
+      ⚠️ Inserisci una Publishable Key Stripe valida nel pannello ⚙️
+    </div>
+  );
+
+  return(
+    <div>
+      <div style={{background:ORO_L,border:`1px solid ${ORO}44`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13}}>
+        <div style={{fontWeight:700,color:NERO,marginBottom:2}}>💳 Pagamento ordine</div>
+        <div style={{color:"#666"}}>Importo: <strong style={{fontSize:16,color:NERO}}>€{importo.toFixed(2)}</strong></div>
+        <div style={{fontSize:11,color:"#888",marginTop:2}}>{ordine.torta} · {ordine.persone} persone{ordine.consegna?" · +€10 consegna":""}</div>
+      </div>
+      <div ref={mountRef} style={{minHeight:60,marginBottom:12}}/>
+      {!ready&&!error&&<div style={{textAlign:"center",padding:"10px",color:"#aaa",fontSize:13}}>Caricamento pagamento…</div>}
+      {error&&<div style={{color:"#ef4444",fontSize:12,marginBottom:8,padding:"8px",background:"#fef2f2",borderRadius:8}}>{error}</div>}
+      {ready&&(
+        <button onClick={handlePay} disabled={loading}
+          style={{width:"100%",padding:"14px",borderRadius:12,background:loading?"#ccc":"#635bff",
+            color:"#fff",border:"none",fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          {loading?"Elaborazione…":`💳 Paga €${importo.toFixed(2)}`}
+        </button>
+      )}
+      <button onClick={onCancel}
+        style={{width:"100%",marginTop:8,padding:"10px",borderRadius:12,background:"transparent",
+          border:"1px solid #e0d8cc",fontSize:13,color:"#888",cursor:"pointer"}}>
+        ← Torna al riepilogo
+      </button>
+      <div style={{textAlign:"center",marginTop:8,fontSize:10,color:"#bbb"}}>
+        🔒 Pagamento sicuro · Powered by Stripe
+      </div>
+    </div>
+  );
+}
+
+// ─── SETTINGS PANEL ───────────────────────────────────────────────────────
+function SettingsPanel({stripeKey,setStripeKey,onClose}){
+  const[val,setVal]=useState(stripeKey);
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#fff",borderRadius:16,padding:24,width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
+        <div style={{fontWeight:700,fontSize:16,color:NERO,marginBottom:4}}>⚙️ Configurazione Stripe</div>
+        <div style={{fontSize:12,color:"#888",marginBottom:16,lineHeight:1.6}}>
+          Inserisci la tua Publishable Key Stripe.<br/>
+          Inizia con <code style={{background:"#f5f5f5",padding:"1px 4px",borderRadius:4}}>pk_test_</code> (test) o <code style={{background:"#f5f5f5",padding:"1px 4px",borderRadius:4}}>pk_live_</code> (produzione).
+        </div>
+        <label style={{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#666",display:"block",marginBottom:6}}>Publishable Key</label>
+        <input value={val} onChange={e=>setVal(e.target.value)} placeholder="pk_test_..."
+          style={{width:"100%",padding:"11px 14px",borderRadius:10,border:"1px solid #e0d8cc",
+            fontFamily:"monospace",fontSize:13,outline:"none",marginBottom:12}}/>
+        <div style={{background:"#f0f9ff",borderRadius:8,padding:"10px 12px",marginBottom:16,fontSize:12,color:"#0369a1",lineHeight:1.5}}>
+          💡 <strong>stripe.com</strong> → Dashboard → Sviluppatori → Chiavi API → copia la <em>Publishable key</em>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{setStripeKey(val);onClose();}}
+            style={{flex:1,padding:"12px",borderRadius:10,background:NERO,color:ORO,border:"none",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+            ✓ Salva
+          </button>
+          <button onClick={onClose}
+            style={{flex:1,padding:"12px",borderRadius:10,background:"transparent",border:"1px solid #e0d8cc",fontSize:14,color:"#666",cursor:"pointer"}}>
+            Annulla
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────
+function App(){
+  const[step,setStep]=useState("giorno");
+  const[msgs,setMsgs]=useState([]);
+  const[ordine,setOrdine]=useState({});
+  const[input,setInput]=useState("");
+  const[typing,setTyping]=useState(false);
+  const[giorni]=useState(getGiorni);
+  const[stripeKey,setStripeKey]=useState("");
+  const[showSettings,setShowSettings]=useState(false);
+  const bottomRef=useRef();
+
+  useEffect(()=>{
+    setTimeout(()=>addBot("👋 Ciao! Benvenuto in Pasticceria Fagotti.\n\nSono qui per aiutarti a ordinare la tua torta personalizzata. 🎂\n\nScegli il giorno di consegna:"),400);
+  },[]);
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[msgs,typing,step]);
+
+  function addBot(t){setMsgs(m=>[...m,{type:"bot",text:t}]);}
+  function addUser(t){setMsgs(m=>[...m,{type:"user",text:t}]);}
+  function pick(label,key,val,next,msg){
+    addUser(label);setOrdine(o=>({...o,[key]:val}));setTyping(true);
+    setTimeout(()=>{setTyping(false);addBot(msg);setStep(next);},800);
+  }
+  function restart(){
+    setStep("giorno");setMsgs([]);setOrdine({});setInput("");
+    setTimeout(()=>addBot("👋 Ciao! Benvenuto in Pasticceria Fagotti.\n\nSono qui per aiutarti a ordinare la tua torta personalizzata. 🎂\n\nScegli il giorno di consegna:"),300);
+  }
+  function parlaPasticceria(){
+    window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent("Ciao! Vorrei parlare con la pasticceria per un ordine 🎂")}`,"_blank");
+  }
+  function inviaOrdineWA(){
+    const o=ordine;
+    const{low,high}=prezzoStimato(o.torta,o.persone,o.consegna);
+    const txt=[
+      `🎂 *Ordine Pasticceria Fagotti*`,``,
+      `👤 *Nome:* ${o.nome}`,`📅 *Giorno:* ${o.giorno}`,`⏰ *Orario:* ${o.orario}`,
+      `🚗 *Modalità:* ${o.consegna?"Consegna (+€10)":"Ritiro in negozio"}`,
+      `🎂 *Torta:* ${o.torta}`,`👥 *Persone:* ${o.persone}`,
+      `🍓 *Farcitura:* ${o.farcitura}`,`✨ *Decorazione:* ${o.decorazione}`,
+      o.scritta?`✍️ *Scritta:* "${o.scritta}"`:  `✍️ *Scritta:* Nessuna`,``,
+      `💰 *Stima:* circa €${low}–€${high}`,
+    ].join("\n");
+    window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(txt)}`,"_blank");
+    addUser("✅ Ordine inviato su WhatsApp!");
+    setTyping(true);
+    setTimeout(()=>{setTyping(false);addBot(`Perfetto ${o.nome}! 🎂\n\nLa pasticceria ti risponderà presto! 💛`);setStep("completato");},700);
+  }
+
+  function renderControls(){
+    if(step==="stripe"){
+      const{base}=prezzoStimato(ordine.torta,ordine.persone,ordine.consegna);
+      return(
+        <StripeCheckout importo={base} ordine={ordine} stripeKey={stripeKey}
+          onSuccess={()=>{
+            addUser("💳 Pagamento completato!");setTyping(true);
+            setTimeout(()=>{setTyping(false);addBot(`Pagamento ricevuto! 🎉\n\nGrazie ${ordine.nome}, il tuo ordine è confermato.\nTi aspettiamo in pasticceria! 💛`);setStep("completato");},700);
+          }}
+          onCancel={()=>setStep("conferma")}/>
+      );
+    }
+    if(step==="completato")return(
+      <div style={{textAlign:"center",padding:20}}>
+        <div style={{fontSize:40,marginBottom:8}}>🎂</div>
+        <div style={{fontWeight:700,fontSize:16,color:NERO,marginBottom:4}}>Ordine confermato!</div>
+        <div style={{fontSize:13,color:"#888",marginBottom:14}}>La pasticceria ti aspetta!</div>
+        <button onClick={restart} style={{padding:"10px 24px",borderRadius:20,background:NERO,color:ORO,border:"none",fontWeight:700,cursor:"pointer"}}>Nuovo ordine</button>
+      </div>
+    );
+    if(step==="giorno")return(
+      <div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:10}}>
+          {giorni.map(d=><Chip key={d.toISOString()} label={fmtG(d)}
+            onClick={()=>pick(fmtG(d),"giorno",fmtG(d),"orario",`📅 ${fmtG(d)}\n\nA che orario vuoi ritirare o ricevere la torta?`)}/>)}
+        </div>
+        <WaBtn onClick={parlaPasticceria}/>
+      </div>
+    );
+    if(step==="orario")return(<div><div style={{display:"flex",flexWrap:"wrap",gap:7}}>{ORARI.map(o=><Chip key={o} label={o} onClick={()=>pick(o,"orario",o,"modalita",`⏰ ${o}\n\nCome vuoi ricevere la torta?`)}/>)}</div><WaBtn onClick={parlaPasticceria}/></div>);
+    if(step==="modalita")return(<div>
+      <BigBtn emoji="🏪" label="Ritiro in negozio" onClick={()=>pick("🏪 Ritiro in negozio","consegna",false,"torta","Ritiro in negozio! 🏪\n\nQuale torta desideri?")}/>
+      <BigBtn emoji="🚗" label="Consegna a domicilio" sub="+€10" onClick={()=>pick("🚗 Consegna a domicilio (+€10)","consegna",true,"torta","Consegna! 🚗\n\nQuale torta desideri?")}/>
+      <WaBtn onClick={parlaPasticceria}/>
+    </div>);
+    if(step==="torta")return(<div><div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:8}}>
+      {Object.keys(LISTINO).map(t=><Chip key={t} label={t} sub={`€${LISTINO[t]}/kg`}
+        onClick={()=>pick(t,"torta",t,"persone",`*${t}* 🎂 (€${LISTINO[t]}/kg)\n\nPer quante persone?`)}/>)}
+    </div><WaBtn onClick={parlaPasticceria}/></div>);
+    if(step==="persone")return(<div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:10}}>
+        {[4,6,8,10,12,15,20,25,30].map(n=>{
+          const{low,high}=prezzoStimato(ordine.torta,n,ordine.consegna);
+          return<Chip key={n} label={`${n} persone`} sub={`circa €${low}–€${high}`}
+            onClick={()=>pick(`${n} persone`,"persone",n,"farcitura",`${n} persone 👥\n\nChe farcitura preferisci?\n(Scrivi liberamente o scegli)`)}/>
+        })}
+      </div><WaBtn onClick={parlaPasticceria}/>
+    </div>);
+    if(step==="farcitura")return(<div>
+      <PrezzoBox torta={ordine.torta} persone={ordine.persone} consegna={ordine.consegna}/>
+      <SuggestInput suggerimenti={FARCITURE} placeholder="Es: fragole e crema, pistacchio..."
+        onConfirm={v=>pick(v,"farcitura",v,"decorazione",`🍓 Farcitura: *${v}*\n\nChe decorazione desideri?\n(Scrivi liberamente o scegli)`)}/>
+      <WaBtn onClick={parlaPasticceria}/>
+    </div>);
+    if(step==="decorazione")return(<div>
+      <PrezzoBox torta={ordine.torta} persone={ordine.persone} consegna={ordine.consegna}/>
+      <SuggestInput suggerimenti={DECORAZIONI} placeholder="Es: fiori di zucchero, minimal..."
+        onConfirm={v=>pick(v,"decorazione",v,"scritta",`✨ Decorazione: *${v}*\n\nVuoi una scritta sulla torta?`)}/>
+      <WaBtn onClick={parlaPasticceria}/>
+    </div>);
+    if(step==="scritta")return(<div>
+      <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} placeholder="Es: Buon compleanno Marco!"
+          onKeyDown={e=>{if(e.key==="Enter"&&input.trim()){pick(`✍️ "${input.trim()}"`, "scritta",input.trim(),"nome",`Scritta: *"${input.trim()}"*\n\nCome ti chiami?`);setInput("");}}}
+          style={{flex:1,padding:"11px 14px",borderRadius:12,border:"1px solid #e0d8cc",fontSize:14,outline:"none"}}/>
+        <button onClick={()=>{if(!input.trim())return;pick(`✍️ "${input.trim()}"`, "scritta",input.trim(),"nome",`Scritta: *"${input.trim()}"*\n\nCome ti chiami?`);setInput("");}}
+          style={{padding:"11px 18px",borderRadius:12,background:ORO,color:"#fff",border:"none",cursor:"pointer",fontWeight:700,fontSize:16}}>→</button>
+      </div>
+      <button onClick={()=>pick("Nessuna scritta","scritta","","nome","Nessuna scritta. 😊\n\nCome ti chiami?")}
+        style={{padding:"8px 14px",borderRadius:20,border:"1px solid #e0d8cc",background:"#fff",color:"#666",fontSize:13,cursor:"pointer"}}>
+        Nessuna scritta
+      </button>
+      <WaBtn onClick={parlaPasticceria}/>
+    </div>);
+    if(step==="nome")return(<div style={{display:"flex",gap:8}}>
+      <input value={input} onChange={e=>setInput(e.target.value)} placeholder="Il tuo nome..."
+        onKeyDown={e=>{if(e.key==="Enter"&&input.trim()){const n=input.trim();setInput("");addUser(n);setOrdine(o=>({...o,nome:n}));setTyping(true);setTimeout(()=>{setTyping(false);addBot(`Grazie ${n}! 😊\n\nEcco il riepilogo del tuo ordine:`);setStep("conferma");},800);}}}
+        style={{flex:1,padding:"11px 14px",borderRadius:12,border:"1px solid #e0d8cc",fontSize:14,outline:"none"}}/>
+      <button onClick={()=>{if(!input.trim())return;const n=input.trim();setInput("");addUser(n);setOrdine(o=>({...o,nome:n}));setTyping(true);setTimeout(()=>{setTyping(false);addBot(`Grazie ${n}! 😊\n\nEcco il riepilogo del tuo ordine:`);setStep("conferma");},800);}}
+        style={{padding:"11px 18px",borderRadius:12,background:ORO,color:"#fff",border:"none",cursor:"pointer",fontWeight:700}}>→</button>
+    </div>);
+    if(step==="conferma"){
+      const{low,high,base}=prezzoStimato(ordine.torta,ordine.persone,ordine.consegna);
+      return(<div>
+        <div style={{background:ORO_L,border:`1px solid ${ORO}44`,borderRadius:12,padding:"14px 16px",marginBottom:12,fontSize:13,lineHeight:2}}>
+          <div><strong>📅</strong> {ordine.giorno} · <strong>⏰</strong> {ordine.orario}</div>
+          <div><strong>🚗</strong> {ordine.consegna?"Consegna a domicilio (+€10)":"Ritiro in negozio"}</div>
+          <div><strong>🎂</strong> {ordine.torta} · <strong>👥</strong> {ordine.persone} persone</div>
+          <div><strong>🍓</strong> {ordine.farcitura} · <strong>✨</strong> {ordine.decorazione}</div>
+          <div><strong>✍️</strong> {ordine.scritta||"Nessuna scritta"}</div>
+          <div style={{marginTop:6,padding:"8px 10px",background:"#fff",borderRadius:8,border:"1px solid #e8d88a"}}>
+            <span style={{color:"#0369a1",fontSize:12}}>💰 Stima: </span>
+            <strong style={{fontSize:16}}>circa €{low}–€{high}</strong>
+            <span style={{color:"#aaa",fontSize:11,display:"block",marginTop:2}}>Il prezzo definitivo verrà concordato</span>
+          </div>
+        </div>
+        <button onClick={()=>setStep("stripe")}
+          style={{width:"100%",padding:"14px",borderRadius:12,background:"#635bff",color:"#fff",
+            border:"none",fontSize:15,fontWeight:700,cursor:"pointer",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:8}}>
+          💳 Paga ora con Stripe · €{base}
+        </button>
+        <button onClick={inviaOrdineWA}
+          style={{width:"100%",padding:"13px",borderRadius:12,background:"#25D366",color:"#fff",
+            border:"none",fontSize:14,fontWeight:700,cursor:"pointer",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Invia ordine su WhatsApp
+        </button>
+        <button onClick={parlaPasticceria}
+          style={{width:"100%",padding:"11px",borderRadius:12,background:"#f0fdf4",border:"1px solid #86efac",color:"#15803d",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="#15803d"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Parla con la pasticceria
+        </button>
+        <button onClick={restart}
+          style={{width:"100%",marginTop:8,padding:"10px",borderRadius:12,background:"transparent",border:"1px solid #e0d8cc",fontSize:13,color:"#888",cursor:"pointer"}}>
+          ← Ricomincia
+        </button>
+      </div>);
+    }
+    return null;
+  }
+
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1a1207 0%,#2d1f0a 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      {showSettings&&<SettingsPanel stripeKey={stripeKey} setStripeKey={setStripeKey} onClose={()=>setShowSettings(false)}/>}
+      <div style={{width:"100%",maxWidth:430}}>
+        <div style={{textAlign:"center",marginBottom:20,position:"relative"}}>
+          <div style={{color:ORO,fontFamily:"Georgia,serif",fontSize:28,fontWeight:"bold",letterSpacing:2}}>Fagotti</div>
+          <div style={{color:"#aaa",fontSize:11,letterSpacing:3,textTransform:"uppercase",marginTop:4}}>Pasticceria Artigianale · Roma</div>
+          <button onClick={()=>setShowSettings(true)}
+            style={{position:"absolute",right:0,top:"50%",transform:"translateY(-50%)",
+              background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",
+              borderRadius:8,color:"#aaa",padding:"6px 12px",fontSize:11,cursor:"pointer"}}>
+            ⚙️ Stripe
+          </button>
+        </div>
+        <div style={{background:"#ece5dd",borderRadius:24,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
+          <div style={{background:"#075E54",padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:40,height:40,borderRadius:"50%",background:NERO,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🎂</div>
+            <div>
+              <div style={{color:"#fff",fontWeight:700,fontSize:15}}>Pasticceria Fagotti</div>
+              <div style={{color:"#9de0bb",fontSize:12}}>Bot ordini · Online</div>
+            </div>
+          </div>
+          <div style={{height:440,overflowY:"auto",padding:16,display:"flex",flexDirection:"column"}}>
+            {msgs.map((m,i)=>m.type==="bot"?<BotMsg key={i} text={m.text}/>:<UserMsg key={i} text={m.text}/>)}
+            {typing&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:NERO,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🎂</div>
+                <div style={{background:"#fff",borderRadius:"18px 18px 18px 4px",padding:"10px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.08)"}}>
+                  <div style={{display:"flex",gap:4}}>{[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:"50%",background:"#aaa",animation:`bounce 1.2s ${i*0.2}s infinite`}}/>)}</div>
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef}/>
+          </div>
+          <div style={{background:"#fff",padding:14,borderTop:"1px solid #e0d8cc",maxHeight:280,overflowY:"auto"}}>
+            {renderControls()}
+          </div>
+        </div>
+        <div style={{textAlign:"center",marginTop:14,color:"#555",fontSize:11}}>
+          {stripeKey?"✓ Stripe configurato":"Clicca ⚙️ Stripe per attivare il pagamento online"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App/>);
+</script>
+</body>
+</html>

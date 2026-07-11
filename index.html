@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Fagotti — Ordina la tua Torta</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:Georgia,serif;background:linear-gradient(135deg,#1a1207 0%,#2d1f0a 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -135,7 +137,27 @@ body{font-family:Georgia,serif;background:linear-gradient(135deg,#1a1207 0%,#2d1
 
 <script>
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-var WA_NUMBER = "390612345678"; // ← sostituisci col numero reale Fagotti
+var WA_NUMBER = "390612345678"; // ← sostituisci col numero reale Fagotti (o impostalo nel hub → Bot torte)
+
+// ─── FIREBASE (stesso progetto del hub Fagotti Fullstack) ─────────────────────
+var db = null;
+try {
+  firebase.initializeApp({
+    apiKey: "AIzaSyDTZFJlCeH6pmwE3tp3qU5dGh7x6XrHe2Q",
+    authDomain: "ordini-fagotti-bd9d8.firebaseapp.com",
+    projectId: "ordini-fagotti-bd9d8",
+    storageBucket: "ordini-fagotti-bd9d8.firebasestorage.app",
+    messagingSenderId: "968063747672",
+    appId: "1:968063747672:web:6c2476600dfeea517cec2d"
+  });
+  db = firebase.firestore();
+} catch(e) { console.warn("Firebase init:", e); }
+
+// Parametri sovrascrivibili dal catalogo pubblicato dal hub (bot_app/catalogo)
+var COSTO_CONSEGNA = 10;
+var KG_PERSONA = 0.15;
+var STIMA_MIN = 0.85;
+var STIMA_MAX = 1.15;
 var stripeKey = "";
 var stripeInstance = null;
 var stripeElements = null;
@@ -172,11 +194,11 @@ function getGiorni(){
   return g;
 }
 function fmtG(d){return GIORNI_IT[d.getDay()]+" "+d.getDate()+" "+MESI_IT[d.getMonth()];}
-function kgPerPersone(n){return n*0.15;}
+function kgPerPersone(n){return n*KG_PERSONA;}
 function prezzoStimato(torta,persone,consegna){
   var pk=LISTINO[torta]||30;
-  var base=pk*kgPerPersone(persone)+(consegna?10:0);
-  return{low:Math.round(base*0.85),high:Math.round(base*1.15),base:Math.round(base),pk:pk};
+  var base=pk*kgPerPersone(persone)+(consegna?COSTO_CONSEGNA:0);
+  return{low:Math.round(base*STIMA_MIN),high:Math.round(base*STIMA_MAX),base:Math.round(base),pk:pk};
 }
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function scrollChat(){
@@ -225,6 +247,60 @@ function pick(label,key,val,next,msg){
   setTimeout(function(){hideTyping();addBot(msg);renderControls();},800);
 }
 
+// ─── CATALOGO DA FIRESTORE (bot_app/catalogo, pubblicato dal hub) ─────────────
+function caricaCatalogo(cb){
+  var done=false;
+  function fine(){ if(!done){ done=true; cb(); } }
+  setTimeout(fine, 4000); // fallback: se Firestore non risponde, partiamo coi default
+  if(!db){ fine(); return; }
+  db.collection("bot_app").doc("catalogo").get().then(function(snap){
+    if(snap.exists){
+      var c=snap.data()||{};
+      if(Array.isArray(c.listino)&&c.listino.length){
+        var L={};
+        c.listino.forEach(function(t){ if(t&&t.nome) L[t.nome]=Number(t.prezzoKg)||30; });
+        if(Object.keys(L).length) LISTINO=L;
+      }
+      if(Array.isArray(c.farciture)&&c.farciture.length) FARCITURE=c.farciture;
+      if(Array.isArray(c.decorazioni)&&c.decorazioni.length) DECORAZIONI=c.decorazioni;
+      if(Array.isArray(c.orari)&&c.orari.length) ORARI=c.orari;
+      if(c.costoConsegna!==undefined&&c.costoConsegna!==null) COSTO_CONSEGNA=Number(c.costoConsegna)||0;
+      if(c.kgPersona) KG_PERSONA=Number(c.kgPersona)||0.15;
+      if(c.stimaMin) STIMA_MIN=Number(c.stimaMin)/100;
+      if(c.stimaMax) STIMA_MAX=Number(c.stimaMax)/100;
+      if(c.waNumber){ var w=String(c.waNumber).replace(/[^0-9]/g,""); if(w) WA_NUMBER=w; }
+    }
+    fine();
+  }).catch(function(e){ console.warn("Catalogo:", e); fine(); });
+}
+
+// ─── SALVA ORDINE SU FIRESTORE (collezione ordini_online → hub, modulo Ordini) ─
+function salvaOrdineFirestore(pagato){
+  try{
+    if(!db) return;
+    var o=stato.ordine;
+    var p=prezzoStimato(o.torta,o.persone,o.consegna);
+    db.collection("ordini_online").add({
+      nome: o.nome||"",
+      telefono: o.telefono||"",
+      giorno: o.giorno||"",
+      dataISO: o.dataISO||"",
+      orario: o.orario||"",
+      consegna: !!o.consegna,
+      torta: o.torta||"",
+      persone: o.persone||0,
+      farcitura: o.farcitura||"",
+      decorazione: o.decorazione||"",
+      scritta: o.scritta||"",
+      stimaBase: p.base,
+      importo: pagato?p.base:0,
+      pagato: !!pagato,
+      importato: false,
+      creato: Date.now()
+    }).catch(function(e){ console.warn("Salvataggio ordine:", e); });
+  }catch(e){ console.warn("Salvataggio ordine:", e); }
+}
+
 // ─── PARLA CON PASTICCERIA ────────────────────────────────────────────────────
 function parlaPasticceria(){
   var txt=encodeURIComponent("Ciao! Vorrei parlare con la pasticceria per un ordine 🎂");
@@ -238,7 +314,7 @@ function waBtnHTML(){
 function prezzoBoxHTML(torta,persone,consegna){
   if(!torta||!persone)return"";
   var p=prezzoStimato(torta,persone,consegna);
-  return '<div class="prezzo-box"><div class="prezzo-label">Stima di spesa</div><div class="prezzo-val">circa €'+p.low+' – €'+p.high+'</div><div class="prezzo-det">~'+kgPerPersone(persone).toFixed(2)+' kg · €'+p.pk+'/kg'+(consegna?' + €10 consegna':'')+'</div><div class="prezzo-note">💡 Il prezzo definitivo verrà concordato con la pasticceria</div></div>';
+  return '<div class="prezzo-box"><div class="prezzo-label">Stima di spesa</div><div class="prezzo-val">circa €'+p.low+' – €'+p.high+'</div><div class="prezzo-det">~'+kgPerPersone(persone).toFixed(2)+' kg · €'+p.pk+'/kg'+(consegna?' + €'+COSTO_CONSEGNA+' consegna':'')+'</div><div class="prezzo-note">💡 Il prezzo definitivo verrà concordato con la pasticceria</div></div>';
 }
 
 // ─── CONTROLS RENDERER ────────────────────────────────────────────────────────
@@ -254,9 +330,9 @@ function renderControls(){
   }
   else if(step==="giorno"){
     html='<div class="chips">';
-    stato.giorni.forEach(function(d){
+    stato.giorni.forEach(function(d,i){
       var lbl=fmtG(d);
-      html+='<button class="chip" onclick="pick(\''+lbl+'\',\'giorno\',\''+lbl+'\',\'orario\',\'📅 '+lbl+'\\n\\nA che orario vuoi ritirare o ricevere la torta?\')"><span>'+lbl+'</span></button>';
+      html+='<button class="chip" onclick="pickGiorno('+i+')"><span>'+lbl+'</span></button>';
     });
     html+='</div>'+waBtnHTML();
   }
@@ -269,7 +345,7 @@ function renderControls(){
   }
   else if(step==="modalita"){
     html='<button class="bigbtn" onclick="pick(\'🏪 Ritiro in negozio\',\'consegna\',false,\'torta\',\'Ritiro in negozio! 🏪\\n\\nQuale torta desideri?\')"><span class="bigbtn-emoji">🏪</span><div><div class="bigbtn-label">Ritiro in negozio</div></div></button>';
-    html+='<button class="bigbtn" onclick="pick(\'🚗 Consegna a domicilio (+€10)\',\'consegna\',true,\'torta\',\'Consegna a domicilio! 🚗\\n\\nQuale torta desideri?\')"><span class="bigbtn-emoji">🚗</span><div><div class="bigbtn-label">Consegna a domicilio</div><div class="bigbtn-sub">+€10</div></div></button>';
+    html+='<button class="bigbtn" onclick="pick(\'🚗 Consegna a domicilio (+€\'+COSTO_CONSEGNA+\')\',\'consegna\',true,\'torta\',\'Consegna a domicilio! 🚗\\n\\nQuale torta desideri?\')"><span class="bigbtn-emoji">🚗</span><div><div class="bigbtn-label">Consegna a domicilio</div><div class="bigbtn-sub">+€'+COSTO_CONSEGNA+'</div></div></button>';
     html+=waBtnHTML();
   }
   else if(step==="torta"){
@@ -308,13 +384,14 @@ function renderControls(){
     html+=waBtnHTML();
   }
   else if(step==="nome"){
-    html='<div class="text-row"><input class="txt-input" id="txt-nome" placeholder="Il tuo nome..." onkeydown="if(event.key===\'Enter\')submitNome()"><button class="txt-btn" onclick="submitNome()">→</button></div>';
+    html='<input class="txt-input" id="txt-nome" placeholder="Il tuo nome..." style="width:100%;margin-bottom:8px" onkeydown="if(event.key===\'Enter\'){var t=document.getElementById(\'txt-tel\');if(t)t.focus();}">';
+    html+='<div class="text-row"><input class="txt-input" id="txt-tel" type="tel" placeholder="Telefono (facoltativo)" onkeydown="if(event.key===\'Enter\')submitNome()"><button class="txt-btn" onclick="submitNome()">→</button></div>';
   }
   else if(step==="conferma"){
     var p=prezzoStimato(o.torta,o.persone,o.consegna);
     html='<div class="riepilogo">';
     html+='<div><strong>📅</strong> '+esc(o.giorno)+' · <strong>⏰</strong> '+esc(o.orario)+'</div>';
-    html+='<div><strong>🚗</strong> '+(o.consegna?"Consegna a domicilio (+€10)":"Ritiro in negozio")+'</div>';
+    html+='<div><strong>🚗</strong> '+(o.consegna?"Consegna a domicilio (+€"+COSTO_CONSEGNA+")":"Ritiro in negozio")+'</div>';
     html+='<div><strong>🎂</strong> '+esc(o.torta)+' · <strong>👥</strong> '+o.persone+' persone</div>';
     html+='<div><strong>🍓</strong> '+esc(o.farcitura)+' · <strong>✨</strong> '+esc(o.decorazione)+'</div>';
     html+='<div><strong>✍️</strong> '+(o.scritta?'"'+esc(o.scritta)+'"':"Nessuna scritta")+'</div>';
@@ -330,7 +407,7 @@ function renderControls(){
     html='<div class="stripe-wrap">';
     html+='<div class="stripe-header"><div class="stripe-pay-title">💳 Pagamento ordine</div>';
     html+='<div class="stripe-pay-amount">Importo: <strong>€'+p2.base+'.00</strong></div>';
-    html+='<div class="stripe-pay-det">'+esc(o.torta)+' · '+o.persone+' persone'+(o.consegna?' · +€10 consegna':'')+'</div></div>';
+    html+='<div class="stripe-pay-det">'+esc(o.torta)+' · '+o.persone+' persone'+(o.consegna?' · +€'+COSTO_CONSEGNA+' consegna':'')+'</div></div>';
     html+='<div id="stripe-element"></div>';
     html+='<div id="stripe-loading" class="stripe-loading">Caricamento pagamento…</div>';
     html+='<div id="stripe-error" class="stripe-error" style="display:none"></div>';
@@ -347,6 +424,14 @@ function renderControls(){
 }
 
 // ─── FORM HANDLERS ────────────────────────────────────────────────────────────
+function pickGiorno(i){
+  var d=stato.giorni[i];
+  if(!d)return;
+  var lbl=fmtG(d);
+  // Data locale (MAI toISOString: sballerebbe il giorno vicino a mezzanotte)
+  stato.ordine.dataISO=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  pick(lbl,"giorno",lbl,"orario","📅 "+lbl+"\n\nA che orario vuoi ritirare o ricevere la torta?");
+}
 function pickTorta(t){
   pick(t,"torta",t,"persone","*"+t+"* 🎂 (€"+LISTINO[t]+"/kg)\n\nPer quante persone?");
 }
@@ -375,8 +460,11 @@ function submitNome(){
   var v=document.getElementById("txt-nome");
   if(v&&v.value.trim()){
     var n=v.value.trim();
-    addUser(n);
+    var tEl=document.getElementById("txt-tel");
+    var tel=(tEl&&tEl.value.trim())||"";
+    addUser(n+(tel?" · 📞 "+tel:""));
     stato.ordine.nome=n;
+    stato.ordine.telefono=tel;
     stato.step="conferma";
     document.getElementById("controls").innerHTML="";
     showTyping();
@@ -388,14 +476,15 @@ function inviaWA(){
   var p=prezzoStimato(o.torta,o.persone,o.consegna);
   var txt=[
     "🎂 *Ordine Pasticceria Fagotti*","",
-    "👤 *Nome:* "+o.nome,"📅 *Giorno:* "+o.giorno,"⏰ *Orario:* "+o.orario,
-    "🚗 *Modalità:* "+(o.consegna?"Consegna (+€10)":"Ritiro in negozio"),
+    "👤 *Nome:* "+o.nome+(o.telefono?" · 📞 "+o.telefono:""),"📅 *Giorno:* "+o.giorno,"⏰ *Orario:* "+o.orario,
+    "🚗 *Modalità:* "+(o.consegna?"Consegna (+€"+COSTO_CONSEGNA+")":"Ritiro in negozio"),
     "🎂 *Torta:* "+o.torta,"👥 *Persone:* "+o.persone,
     "🍓 *Farcitura:* "+o.farcitura,"✨ *Decorazione:* "+o.decorazione,
     o.scritta?"✍️ *Scritta:* \""+o.scritta+"\"":"✍️ *Scritta:* Nessuna","",
     "💰 *Stima:* circa €"+p.low+"–€"+p.high
   ].join("\n");
   window.open("https://wa.me/"+WA_NUMBER+"?text="+encodeURIComponent(txt),"_blank");
+  salvaOrdineFirestore(false);
   addUser("✅ Ordine inviato su WhatsApp!");
   stato.step="completato";
   showTyping();
@@ -459,6 +548,7 @@ async function doStripePay(){
     if(err){err.textContent=res2.error.message;err.style.display="block";}
     if(btn){btn.disabled=false;var p=prezzoStimato(stato.ordine.torta,stato.ordine.persone,stato.ordine.consegna);btn.textContent="💳 Paga €"+p.base+".00";}
   }else{
+    salvaOrdineFirestore(true);
     addUser("💳 Pagamento completato!");
     stato.step="completato";
     showTyping();
@@ -492,10 +582,12 @@ function restart(){
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 stato.giorni=getGiorni();
-setTimeout(function(){
-  addBot("👋 Ciao! Benvenuto in Pasticceria Fagotti.\n\nSono qui per aiutarti a ordinare la tua torta personalizzata. 🎂\n\nScegli il giorno di consegna:");
-  renderControls();
-},400);
+caricaCatalogo(function(){
+  setTimeout(function(){
+    addBot("👋 Ciao! Benvenuto in Pasticceria Fagotti.\n\nSono qui per aiutarti a ordinare la tua torta personalizzata. 🎂\n\nScegli il giorno di consegna:");
+    renderControls();
+  },400);
+});
 </script>
 </body>
 </html>

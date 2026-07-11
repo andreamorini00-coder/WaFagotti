@@ -185,8 +185,11 @@ try {
 
 // Parametri sovrascrivibili dal catalogo pubblicato dal hub (bot_app/catalogo)
 var COSTO_CONSEGNA = 10;
+<<<<<<< HEAD
 var SHOP_URL = "";
 var WA_PLACEHOLDER = "390612345678";
+=======
+>>>>>>> 997e5bbd0c695b840afc94ffcec1f13de7bc1da1
 var KG_PERSONA = 0.15;
 var STIMA_MIN = 0.85;
 var STIMA_MAX = 1.15;
@@ -301,7 +304,10 @@ function caricaCatalogo(cb){
       if(c.stimaMin) STIMA_MIN=Number(c.stimaMin)/100;
       if(c.stimaMax) STIMA_MAX=Number(c.stimaMax)/100;
       if(c.waNumber){ var w=String(c.waNumber).replace(/[^0-9]/g,""); if(w) WA_NUMBER=w; }
+<<<<<<< HEAD
       if(c.shopUrl) SHOP_URL=String(c.shopUrl);
+=======
+>>>>>>> 997e5bbd0c695b840afc94ffcec1f13de7bc1da1
     }
     fine();
   }).catch(function(e){ console.warn("Catalogo:", e); fine(); });
@@ -334,6 +340,7 @@ function salvaOrdineFirestore(pagato){
   }catch(e){ console.warn("Salvataggio ordine:", e); }
 }
 
+<<<<<<< HEAD
 // ─── LINK UNICO: menu iniziale ────────────────────────────────────────────────
 function waConfigurato(){
   return WA_NUMBER && WA_NUMBER !== WA_PLACEHOLDER && WA_NUMBER.replace(/[^0-9]/g,"").length >= 10;
@@ -359,6 +366,8 @@ function avviaOrdine(){
 function apriShop(){
   if(SHOP_URL) window.open(SHOP_URL,"_blank");
 }
+=======
+>>>>>>> 997e5bbd0c695b840afc94ffcec1f13de7bc1da1
 // ─── PARLA CON PASTICCERIA ────────────────────────────────────────────────────
 function parlaPasticceria(){
   if(!waConfigurato()){
@@ -545,6 +554,7 @@ function inviaWA(){
     o.scritta?"✍️ *Scritta:* \""+o.scritta+"\"":"✍️ *Scritta:* Nessuna","",
     "💰 *Stima:* circa €"+p.low+"–€"+p.high
   ].join("\n");
+<<<<<<< HEAD
   salvaOrdineFirestore(false);
   if(waConfigurato()){
     window.open("https://wa.me/"+WA_NUMBER+"?text="+encodeURIComponent(txt),"_blank");
@@ -555,6 +565,11 @@ function inviaWA(){
       addBot("📬 Il tuo ordine \u00e8 stato registrato!\n\nLa pasticceria lo vede subito nel gestionale e ti contatter\u00e0"+(stato.ordine.telefono?" al numero che hai lasciato":"")+" per la conferma. Grazie! 🎂");
     },400);
   }
+=======
+  window.open("https://wa.me/"+WA_NUMBER+"?text="+encodeURIComponent(txt),"_blank");
+  salvaOrdineFirestore(false);
+  addUser("✅ Ordine inviato su WhatsApp!");
+>>>>>>> 997e5bbd0c695b840afc94ffcec1f13de7bc1da1
   stato.step="completato";
   showTyping();
   setTimeout(function(){hideTyping();addBot("Perfetto "+o.nome+"! 🎂\n\nLa pasticceria ti risponderà presto! 💛");renderControls();},700);
@@ -652,7 +667,14 @@ function restart(){
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 stato.giorni=getGiorni();
 caricaCatalogo(function(){
+<<<<<<< HEAD
   aggiornaMenu();
+=======
+  setTimeout(function(){
+    addBot("👋 Ciao! Benvenuto in Pasticceria Fagotti.\n\nSono qui per aiutarti a ordinare la tua torta personalizzata. 🎂\n\nScegli il giorno di consegna:");
+    renderControls();
+  },400);
+>>>>>>> 997e5bbd0c695b840afc94ffcec1f13de7bc1da1
 });
 </script>
 </body>

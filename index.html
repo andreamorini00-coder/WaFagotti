@@ -146,7 +146,7 @@ body{font-family:Georgia,serif;background:linear-gradient(135deg,#1a1207 0%,#2d1
     <div class="chat" id="chat"></div>
     <div class="controls" id="controls"></div>
   </div>
-  <div class="footer" id="footer">Pasticceria Fagotti · Roma · v5</div>
+  <div class="footer" id="footer">Pasticceria Fagotti · Roma · v6</div>
 </div>
 
 <script>
@@ -308,7 +308,7 @@ function diagPaint(){
     if(String(location.search).indexOf("debug") < 0) return;
     var f = document.getElementById("footer");
     if(!f) return;
-    f.textContent = "v5 · db:" + (db ? "ok" : "NO") +
+    f.textContent = "v6 · db:" + (db ? "ok" : "NO") +
       " · get:" + faseCat + " · tentativi:" + tentativiCat +
       " · wa:" + (waConfigurato() ? "ok" : "no[" + WA_NUMBER + "]") +
       " · shop:" + (SHOP_URL ? "ok" : "no");
@@ -338,7 +338,7 @@ function applicaCatalogo(c){
   if(c.stimaMax) STIMA_MAX = Number(c.stimaMax) / 100;
   if(c.waNumber){ var w = String(c.waNumber).replace(/[^0-9]/g, ""); if(w) WA_NUMBER = w; }
   if(c.shopUrl) SHOP_URL = String(c.shopUrl);
-  catalogoOk = true;
+  catalogoOk = !!c.waNumber;   // completo solo se il numero è arrivato davvero
 }
 
 function fetchCatalogo(fine){
@@ -353,10 +353,20 @@ function fetchCatalogo(fine){
     return;
   }
   db.collection("bot_app").doc("catalogo").get().then(function(snap){
-    faseCat = snap.exists ? "ok" : "doc mancante";
-    if(snap.exists) applicaCatalogo(snap.data() || {});
+    var d = snap.exists ? (snap.data() || {}) : {};
+    /* Se abbiamo una nostra scrittura in volo sullo stesso documento, l'SDK può
+       rispondere con la sola vista locale (es. solo pageUrl): trattiamo lo
+       snapshot senza waNumber come PARZIALE e ritentiamo. */
+    var completo = !!d.waNumber;
+    faseCat = !snap.exists ? "doc mancante" : (completo ? "ok" : "parziale");
+    if(snap.exists) applicaCatalogo(d);
     if(fine) fine();
     aggiornaMenu();   // fondamentale: i dati possono arrivare dopo il fallback
+    if(completo){
+      pubblicaMioUrl();     // ora sì: la lettura è al sicuro, pubblichiamo il nostro URL
+    }else if(tentativiCat < 4){
+      setTimeout(function(){ fetchCatalogo(null); }, 1500);
+    }
   }).catch(function(e){
     faseCat = "errore " + (e && (e.code || e.message) || "sconosciuto");
     console.warn("Catalogo non caricato (tentativo " + tentativiCat + "):", e);
@@ -367,7 +377,6 @@ function fetchCatalogo(fine){
 }
 
 function caricaCatalogo(cb){
-  pubblicaMioUrl();
   var done = false;
   function fine(){ if(!done){ done = true; cb(); } }
   setTimeout(fine, 4000);              // il bot parte coi default se la rete è lenta

@@ -146,7 +146,7 @@ body{font-family:Georgia,serif;background:linear-gradient(135deg,#1a1207 0%,#2d1
     <div class="chat" id="chat"></div>
     <div class="controls" id="controls"></div>
   </div>
-  <div class="footer" id="footer">Pasticceria Fagotti · Roma · v4</div>
+  <div class="footer" id="footer">Pasticceria Fagotti · Roma · v5</div>
 </div>
 
 <script>
@@ -299,6 +299,21 @@ function pubblicaMioUrl(){
 }
 var catalogoOk = false;
 var tentativiCat = 0;
+var faseCat = "avvio";
+
+/* Con ?debug nel link, il footer mostra lo stato interno: serve per capire
+   dove si ferma il caricamento su un dispositivo specifico. */
+function diagPaint(){
+  try{
+    if(String(location.search).indexOf("debug") < 0) return;
+    var f = document.getElementById("footer");
+    if(!f) return;
+    f.textContent = "v5 · db:" + (db ? "ok" : "NO") +
+      " · get:" + faseCat + " · tentativi:" + tentativiCat +
+      " · wa:" + (waConfigurato() ? "ok" : "no[" + WA_NUMBER + "]") +
+      " · shop:" + (SHOP_URL ? "ok" : "no");
+  }catch(e){}
+}
 
 /* Legge bot_app/catalogo e applica i parametri pubblicati dalla Suite.
    Robusto per reti lente: il menu viene ri-sincronizzato ogni volta che i
@@ -328,15 +343,26 @@ function applicaCatalogo(c){
 
 function fetchCatalogo(fine){
   tentativiCat++;
+  faseCat = "in corso";
+  if(!db){ try{ db = firebase.firestore(); }catch(e){} }   // secondo tentativo di init
+  if(!db){
+    faseCat = "niente db";
+    if(fine) fine();
+    aggiornaMenu();
+    if(tentativiCat < 4) setTimeout(function(){ fetchCatalogo(null); }, 2500);
+    return;
+  }
   db.collection("bot_app").doc("catalogo").get().then(function(snap){
+    faseCat = snap.exists ? "ok" : "doc mancante";
     if(snap.exists) applicaCatalogo(snap.data() || {});
     if(fine) fine();
     aggiornaMenu();   // fondamentale: i dati possono arrivare dopo il fallback
   }).catch(function(e){
+    faseCat = "errore " + (e && (e.code || e.message) || "sconosciuto");
     console.warn("Catalogo non caricato (tentativo " + tentativiCat + "):", e);
     if(fine) fine();
     aggiornaMenu();
-    if(tentativiCat < 3) setTimeout(function(){ fetchCatalogo(null); }, 2500);
+    if(tentativiCat < 4) setTimeout(function(){ fetchCatalogo(null); }, 2500);
   });
 }
 
@@ -345,10 +371,9 @@ function caricaCatalogo(cb){
   var done = false;
   function fine(){ if(!done){ done = true; cb(); } }
   setTimeout(fine, 4000);              // il bot parte coi default se la rete è lenta
-  if(!db){ fine(); return; }
-  fetchCatalogo(fine);
-  // Rete lenta: se dopo 6s non è ancora arrivato nulla, ritenta (max 3 volte)
-  setTimeout(function(){ if(!catalogoOk && tentativiCat < 3) fetchCatalogo(null); }, 6000);
+  fetchCatalogo(fine);                 // gestisce da solo anche il caso db nullo
+  // Rete lenta: se dopo 6s non è ancora arrivato nulla, ritenta
+  setTimeout(function(){ if(!catalogoOk && tentativiCat < 4) fetchCatalogo(null); }, 6000);
 }
 // ─── SALVA ORDINE SU FIRESTORE (collezione "ordini" → agenda Dashboard) ───────
 /* Salva l'ordine nella collection "ordini": la stessa dell'app Ordini Fagotti.
@@ -398,6 +423,7 @@ function aggiornaMenu(){
   if(s) s.style.display = SHOP_URL ? "flex" : "none";
   var p=document.getElementById("sm-parla");
   if(p) p.style.display = waConfigurato() ? "flex" : "none";
+  diagPaint();
 }
 var chatAvviata=false;
 function avviaOrdine(){

@@ -21,6 +21,7 @@ body{font-family:Georgia,serif;background:linear-gradient(135deg,#1a1207 0%,#2d1
 .brand-sub{color:#aaa;font-family:sans-serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-top:4px}
 .phone{background:#ece5dd;border-radius:24px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
 .wa-header{background:#075E54;padding:12px 16px;display:flex;align-items:center;gap:12px}
+.btn-menu{margin-left:auto;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);border-radius:8px;color:#fff;padding:6px 12px;font-family:sans-serif;font-size:12px;cursor:pointer;display:none}
 .wa-avatar{width:40px;height:40px;border-radius:50%;background:#1a1207;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
 .wa-name{color:#fff;font-family:sans-serif;font-weight:700;font-size:15px}
 .wa-status{color:#9de0bb;font-family:sans-serif;font-size:12px}
@@ -133,6 +134,7 @@ body{font-family:Georgia,serif;background:linear-gradient(135deg,#1a1207 0%,#2d1
         <div class="wa-name">Pasticceria Fagotti</div>
         <div class="wa-status">Bot ordini · Online</div>
       </div>
+      <button class="btn-menu" id="btn-menu" onclick="tornaMenu()">‹ Menu</button>
     </div>
     <div id="startmenu">
       <div class="sm-logo">🎂</div>
@@ -146,7 +148,7 @@ body{font-family:Georgia,serif;background:linear-gradient(135deg,#1a1207 0%,#2d1
     <div class="chat" id="chat"></div>
     <div class="controls" id="controls"></div>
   </div>
-  <div class="footer" id="footer">Pasticceria Fagotti · Roma · v6</div>
+  <div class="footer" id="footer">Pasticceria Fagotti · Roma · v7</div>
 </div>
 
 <script>
@@ -308,7 +310,7 @@ function diagPaint(){
     if(String(location.search).indexOf("debug") < 0) return;
     var f = document.getElementById("footer");
     if(!f) return;
-    f.textContent = "v6 · db:" + (db ? "ok" : "NO") +
+    f.textContent = "v7 · db:" + (db ? "ok" : "NO") +
       " · get:" + faseCat + " · tentativi:" + tentativiCat +
       " · wa:" + (waConfigurato() ? "ok" : "no[" + WA_NUMBER + "]") +
       " · shop:" + (SHOP_URL ? "ok" : "no");
@@ -435,9 +437,19 @@ function aggiornaMenu(){
   diagPaint();
 }
 var chatAvviata=false;
+function tornaMenu(){
+  var m=document.getElementById("startmenu");
+  if(m) m.style.display="";
+  var b=document.getElementById("btn-menu");
+  if(b) b.style.display="none";
+  aggiornaMenu();   // ridisegna i tre bottoni con lo stato aggiornato
+}
+
 function avviaOrdine(){
   var m=document.getElementById("startmenu");
   if(m) m.style.display="none";
+  var b=document.getElementById("btn-menu");
+  if(b) b.style.display="block";
   if(!chatAvviata){
     chatAvviata=true;
     setTimeout(function(){
